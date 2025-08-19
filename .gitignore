@@ -4,3 +4,4 @@ __pycache__/
 models/
 notebooks/.ipynb_checkpoints/
 data/*
+!data/global_youtube_statistics.csv
