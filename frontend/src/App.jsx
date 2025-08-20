@@ -1,4 +1,93 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
+/* ---------- dropdown options ---------- */
+const CATEGORY_OPTIONS = [
+  "Entertainment", "Music", "Gaming", "Education", "Sports", "People & Blogs",
+  "Film & Animation", "Howto & Style", "News & Politics", "Shows", "Comedy",
+  "Science & Technology", "Travel & Events", "Autos & Vehicles"
+];
+
+const CHANNEL_TYPE_OPTIONS = [
+  "Creator", "Brand", "Music", "Entertainment", "Education", "Sports", "Media"
+];
+
+const COUNTRY_OPTIONS = [
+  "US", "India", "UK", "Canada", "Germany", "France", "Brazil", "Japan", "South Korea",
+  "Russia", "Australia", "Italy", "Spain", "Netherlands", "Mexico", "Argentina"
+];
+
+const yearsRange = (start, end) => {
+  const arr = [];
+  for (let y = start; y <= end; y++) arr.push(y);
+  return arr;
+};
+const YEARS = yearsRange(2005, 2025);
+
+const toNumberOrNull = (v) => {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+function NumericInput({ label, name, value, onChange, placeholder }) {
+  const handle = (e) => {
+    const raw = e.target.value;
+    if (raw === "" || /^[0-9]+$/.test(raw)) {
+      onChange({ target: { name, value: raw } });
+    }
+  };
+  return (
+    <label className="block mb-3">
+      <div className="text-sm font-medium mb-1">{label}</div>
+      <input
+        className="w-full border rounded px-3 py-2"
+        name={name}
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={value}
+        onChange={handle}
+        onWheel={(e) => e.currentTarget.blur()}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function TextInput({ label, name, value, onChange, placeholder }) {
+  return (
+    <label className="block mb-3">
+      <div className="text-sm font-medium mb-1">{label}</div>
+      <input
+        className="w-full border rounded px-3 py-2"
+        name={name}
+        type="text"
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function SelectInput({ label, name, value, onChange, options }) {
+  return (
+    <label className="block mb-3">
+      <div className="text-sm font-medium mb-1">{label}</div>
+      <select
+        className="w-full border rounded px-3 py-2 bg-white text-black"
+        name={name}
+        value={value}
+        onChange={onChange}
+      >
+        <option value="" disabled>Choose…</option>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 const initial = {
   video_views: "",
@@ -13,12 +102,6 @@ const initial = {
   highest_monthly_earnings: "",
   lowest_yearly_earnings: "",
   highest_yearly_earnings: ""
-};
-
-const toNumberOrNull = (v) => {
-  if (v === "" || v === null || v === undefined) return null;
-  const num = Number(v);
-  return Number.isFinite(num) ? num : null;
 };
 
 export default function App() {
@@ -61,13 +144,9 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-
       const data = await resp.json();
-      if (!resp.ok) {
-        setError(data?.error || "Request failed");
-      } else {
-        setResult(data);
-      }
+      if (!resp.ok) setError(data?.error || "Request failed");
+      else setResult(data);
     } catch (err) {
       setError(err?.message || "Network error");
     } finally {
@@ -75,46 +154,73 @@ export default function App() {
     }
   };
 
-  const Input = ({ label, name, type = "text", placeholder }) => (
-    <label className="block mb-3">
-      <div className="text-sm font-medium mb-1">{label}</div>
-      <input
-        className="w-full border rounded px-3 py-2"
-        name={name}
-        type={type}
-        value={form[name]}
-        onChange={onChange}
-        placeholder={placeholder}
-      />
-    </label>
-  );
-
   return (
-    <div style={{ maxWidth: 900, margin: "24px auto", padding: "0 16px" }}>
+    <div style={{ maxWidth: 960, margin: "24px auto", padding: "0 16px" }}>
       <h1>YouTube Subscriber Predictor</h1>
-      <p style={{ color: "#555" }}>
-        Enter channel stats to get a predicted subscriber count.
+      <p style={{ color: "#888" }}>
+        API: <code>{apiBase}</code>
       </p>
 
       <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
         <h3>Required</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Input label="Total Video Views" name="video_views" type="number" placeholder="e.g. 28368841870" />
-          <Input label="Uploads" name="uploads" type="number" placeholder="e.g. 741" />
-          <Input label="Views (last 30 days)" name="video_views_for_the_last_30_days" type="number" placeholder="e.g. 1348000000" />
-          <Input label="Subscribers (last 30 days)" name="subscribers_for_last_30_days" type="number" placeholder="e.g. 8000000" />
-          <Input label="Created Year" name="created_year" type="number" placeholder="e.g. 2012" />
-          <Input label="Category" name="category" placeholder="e.g. Entertainment" />
-          <Input label="Country" name="country" placeholder="e.g. US" />
-          <Input label="Channel Type" name="channel_type" placeholder="e.g. Creator" />
-        </div>
+          <NumericInput
+            label="Total Video Views"
+            name="video_views"
+            value={form.video_views}
+            onChange={onChange}
+            placeholder="e.g. 28368841870"
+          />
+          <NumericInput
+            label="Uploads"
+            name="uploads"
+            value={form.uploads}
+            onChange={onChange}
+            placeholder="e.g. 741"
+          />
+          <NumericInput
+            label="Views (last 30 days)"
+            name="video_views_for_the_last_30_days"
+            value={form.video_views_for_the_last_30_days}
+            onChange={onChange}
+            placeholder="e.g. 1348000000"
+          />
+          <NumericInput
+            label="Subscribers (last 30 days)"
+            name="subscribers_for_last_30_days"
+            value={form.subscribers_for_last_30_days}
+            onChange={onChange}
+            placeholder="e.g. 8000000"
+          />
 
-        <h3 style={{ marginTop: 16 }}>Optional (Earnings)</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Input label="Lowest Monthly Earnings" name="lowest_monthly_earnings" type="number" />
-          <Input label="Highest Monthly Earnings" name="highest_monthly_earnings" type="number" />
-          <Input label="Lowest Yearly Earnings" name="lowest_yearly_earnings" type="number" />
-          <Input label="Highest Yearly Earnings" name="highest_yearly_earnings" type="number" />
+          <SelectInput
+            label="Created Year"
+            name="created_year"
+            value={form.created_year}
+            onChange={onChange}
+            options={YEARS}
+          />
+          <SelectInput
+            label="Category"
+            name="category"
+            value={form.category}
+            onChange={onChange}
+            options={CATEGORY_OPTIONS}
+          />
+          <SelectInput
+            label="Country"
+            name="country"
+            value={form.country}
+            onChange={onChange}
+            options={COUNTRY_OPTIONS}
+          />
+          <SelectInput
+            label="Channel Type"
+            name="channel_type"
+            value={form.channel_type}
+            onChange={onChange}
+            options={CHANNEL_TYPE_OPTIONS}
+          />
         </div>
 
         <button
@@ -147,6 +253,9 @@ export default function App() {
             <strong>Predicted Subscribers:</strong>{" "}
             {result.predicted_subscribers?.toLocaleString?.() ?? result.predicted_subscribers}
           </p>
+          {result.was_clamped && (
+            <p style={{ color: "#888" }}>Note: output was clamped ({result.clamp_reason}).</p>
+          )}
           <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(result, null, 2)}</pre>
         </div>
       )}

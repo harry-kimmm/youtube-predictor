@@ -7,7 +7,8 @@ from pathlib import Path
 
 MODEL_PATH = Path("models/youtube_model.joblib")
 DATA_CLEAN = Path("data/processed/youtube_clean.csv")
-CURRENT_YEAR = 2023
+from datetime import datetime
+CURRENT_YEAR = datetime.now().year
 
 NUM_COLS = [
     "video_views","uploads",
