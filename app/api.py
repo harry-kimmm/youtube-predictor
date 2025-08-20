@@ -6,6 +6,7 @@ import pandas as pd
 from pathlib import Path
 
 MODEL_PATH = Path("models/youtube_model.joblib")
+DATA_CLEAN = Path("data/processed/youtube_clean.csv")
 CURRENT_YEAR = 2023
 
 NUM_COLS = [
@@ -18,17 +19,37 @@ NUM_COLS = [
 CAT_COLS = ["category","country","channel_type"]
 ALL_COLS = NUM_COLS + CAT_COLS
 
-REQUIRED_KEYS = [
+REQUIRED_KEYS_NUM = [
     "video_views","uploads","video_views_for_the_last_30_days",
-    "subscribers_for_last_30_days","created_year","category","country","channel_type"
+    "subscribers_for_last_30_days","created_year"
 ]
-OPTIONAL_KEYS = ["lowest_monthly_earnings","highest_monthly_earnings",
-                 "lowest_yearly_earnings","highest_yearly_earnings"]
+REQUIRED_KEYS_STR = ["category","country","channel_type"]
+OPTIONAL_KEYS = [
+    "lowest_monthly_earnings","highest_monthly_earnings",
+    "lowest_yearly_earnings","highest_yearly_earnings"
+]
 
 app = Flask(__name__)
 CORS(app)
 
+if not MODEL_PATH.exists():
+    raise FileNotFoundError(f"Model not found at {MODEL_PATH.resolve()}")
 model = joblib.load(MODEL_PATH)
+
+if not DATA_CLEAN.exists():
+    raise FileNotFoundError(f"Processed data not found at {DATA_CLEAN.resolve()}")
+stats_df = pd.read_csv(DATA_CLEAN)
+
+SUB_P995 = float(np.nanpercentile(stats_df["subscribers"], 99.5))
+sv = stats_df.loc[stats_df["video_views"] > 0, ["subscribers","video_views"]].copy()
+sv["ratio"] = sv["subscribers"] / sv["video_views"]
+SV_RATIO_P95 = float(np.nanpercentile(sv["ratio"].replace([np.inf,-np.inf], np.nan).dropna(), 95)) if len(sv) else 1.0
+
+su = stats_df.loc[stats_df["uploads"] > 0, ["subscribers","uploads"]].copy()
+su["ratio"] = su["subscribers"] / su["uploads"]
+SU_RATIO_P95 = float(np.nanpercentile(su["ratio"].replace([np.inf,-np.inf], np.nan).dropna(), 95)) if len(su) else 1e6
+if not np.isfinite(SV_RATIO_P95) or SV_RATIO_P95 <= 0: SV_RATIO_P95 = 1.0
+if not np.isfinite(SU_RATIO_P95) or SU_RATIO_P95 <= 0: SU_RATIO_P95 = 1e6
 
 def to_float(x):
     try:
@@ -38,18 +59,43 @@ def to_float(x):
     except Exception:
         return None
 
+def validate_payload(payload: dict):
+    missing = []
+    bad_types = []
+
+    for k in REQUIRED_KEYS_NUM:
+        v = payload.get(k, None)
+        fv = to_float(v)
+        if fv is None:
+            missing.append(k)
+        else:
+            payload[k] = fv
+
+    for k in REQUIRED_KEYS_STR:
+        v = payload.get(k, None)
+        if v is None or str(v).strip() == "":
+            missing.append(k)
+        else:
+            payload[k] = str(v).strip()
+
+    cy = payload.get("created_year")
+    if isinstance(cy, (int, float)) and (cy > CURRENT_YEAR or cy < 2005):
+        bad_types.append("created_year out of range")
+
+    return missing, bad_types, payload
+
 def build_feature_row(payload: dict) -> pd.DataFrame:
     row = {c: None for c in ALL_COLS}
 
-    row["video_views"] = to_float(payload.get("video_views"))
-    row["uploads"] = to_float(payload.get("uploads"))
-    row["video_views_for_the_last_30_days"] = to_float(payload.get("video_views_for_the_last_30_days"))
-    row["subscribers_for_last_30_days"] = to_float(payload.get("subscribers_for_last_30_days"))
-    row["created_year"] = to_float(payload.get("created_year"))
+    row["video_views"] = payload["video_views"]
+    row["uploads"] = payload["uploads"]
+    row["video_views_for_the_last_30_days"] = payload["video_views_for_the_last_30_days"]
+    row["subscribers_for_last_30_days"] = payload["subscribers_for_last_30_days"]
+    row["created_year"] = payload["created_year"]
 
-    row["category"] = (payload.get("category") or "").strip()
-    row["country"] = (payload.get("country") or "").strip()
-    row["channel_type"] = (payload.get("channel_type") or "").strip()
+    row["category"] = payload["category"]
+    row["country"] = payload["country"]
+    row["channel_type"] = payload["channel_type"]
 
     year = row["created_year"]
     uploads = row["uploads"]
@@ -69,30 +115,57 @@ def build_feature_row(payload: dict) -> pd.DataFrame:
     hi_m = to_float(payload.get("highest_monthly_earnings"))
     lo_y = to_float(payload.get("lowest_yearly_earnings"))
     hi_y = to_float(payload.get("highest_yearly_earnings"))
-
     row["monthly_earnings_mid"] = ((lo_m + hi_m) / 2.0) if (lo_m is not None and hi_m is not None) else None
     row["yearly_earnings_mid"]  = ((lo_y + hi_y) / 2.0) if (lo_y is not None and hi_y is not None) else None
 
-    df = pd.DataFrame([row], columns=ALL_COLS)
-    return df
+    return pd.DataFrame([row], columns=ALL_COLS)
+
+def clamp_prediction(raw_pred: float, feats: pd.DataFrame, payload: dict):
+    caps = [SUB_P995]
+    note_parts = []
+
+    views = feats.loc[0, "video_views"]
+    uploads = feats.loc[0, "uploads"]
+
+    if views is not None and np.isfinite(views) and views > 0:
+        caps.append(SV_RATIO_P95 * views)
+        note_parts.append(f"cap_sv=ratio95({SV_RATIO_P95:.3g})*views")
+
+    if uploads is not None and np.isfinite(uploads) and uploads > 0:
+        caps.append(SU_RATIO_P95 * uploads)
+        note_parts.append(f"cap_su=ratio95({SU_RATIO_P95:.3g})*uploads")
+
+    upper = min(caps) if caps else SUB_P995
+    lower = 0.0
+
+    clamped = raw_pred
+    reason = None
+    if raw_pred < lower:
+        clamped = lower
+        reason = "lower_bound=0"
+    elif raw_pred > upper:
+        clamped = upper
+        reason = "upper_bound=" + " & ".join(note_parts) if note_parts else "upper_bound=P99.5"
+
+    subs_last30 = payload.get("subscribers_for_last_30_days", 0)
+    if subs_last30 is not None and clamped < subs_last30:
+        clamped = subs_last30
+        reason = "floor=subscribers_for_last_30_days"
+
+    return float(clamped), reason
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model_loaded": MODEL_PATH.name}, 200
-
-@app.get("/schema")
-def schema():
-    return jsonify({
-        "required": REQUIRED_KEYS,
-        "optional": OPTIONAL_KEYS,
-        "notes": {
-            "created_year": f"int (<= {CURRENT_YEAR})",
-            "category": "string",
-            "country": "(US, India, JP, etc)",
-            "channel_type": "string (Creator, Brand, Entertainment, etc)"
-        }
-    })
+    return {
+        "status": "ok",
+        "model_loaded": MODEL_PATH.name,
+        "clamp_params": {
+            "subs_p99_5": SUB_P995,
+            "subs_per_view_p95": SV_RATIO_P95,
+            "subs_per_upload_p95": SU_RATIO_P95,
+        },
+    }, 200
 
 @app.post("/predict")
 def predict():
@@ -101,16 +174,22 @@ def predict():
     except Exception:
         return jsonify({"error": "Invalid JSON"}), 400
 
+    missing, bad_types, payload_norm = validate_payload(payload)
+    if missing or bad_types:
+        return jsonify({"error": "Bad request", "missing": missing, "problems": bad_types}), 400
 
     try:
-        feats = build_feature_row(payload)
-        pred = model.predict(feats)
-        pred_val = max(0.0, float(pred[0]))
-        return jsonify({
-            "predicted_subscribers": int(round(pred_val)),
-            "predicted_subscribers_raw": pred_val,
-            "inputs_used": payload
-        })
+        feats = build_feature_row(payload_norm)
+        raw = float(model.predict(feats)[0])
+        clamped, reason = clamp_prediction(raw, feats, payload_norm)
+        resp = {
+            "predicted_subscribers": int(round(clamped)),
+            "predicted_subscribers_raw": raw,
+            "was_clamped": bool(reason is not None or clamped != raw),
+            "clamp_reason": reason,
+            "inputs_used": payload_norm
+        }
+        return jsonify(resp)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
