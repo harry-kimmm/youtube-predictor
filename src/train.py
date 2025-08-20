@@ -1,12 +1,11 @@
-import os
+import inspect
 import joblib
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import inspect
 
 from sklearn.model_selection import train_test_split
-from sklearn.compose import ColumnTransformer
+from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
@@ -15,7 +14,6 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 DATA = Path("data/processed/youtube_clean.csv")
 MODEL_PATH = Path("models/youtube_model.joblib")
-
 TARGET = "subscribers"
 
 NUM_COLS = [
@@ -28,52 +26,54 @@ NUM_COLS = [
 
 CAT_COLS = ["category","country","channel_type"]
 
+def build_preprocessor(num_cols, cat_cols):
+    numeric = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ])
+    ohe_kwargs = {"handle_unknown": "ignore"}
+    if "sparse_output" in inspect.signature(OneHotEncoder).parameters:
+        ohe_kwargs["sparse_output"] = False
+    else:
+        ohe_kwargs["sparse"] = False
+    categorical = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("ohe", OneHotEncoder(**ohe_kwargs))
+    ])
+    return ColumnTransformer([
+        ("num", numeric, num_cols),
+        ("cat", categorical, cat_cols),
+    ])
+
 def main():
     if not DATA.exists():
         raise FileNotFoundError(f"Processed CSV not found: {DATA.resolve()}")
 
     df = pd.read_csv(DATA)
-
     num_cols = [c for c in NUM_COLS if c in df.columns]
     cat_cols = [c for c in CAT_COLS if c in df.columns]
 
     X = df[num_cols + cat_cols].copy()
     y = df[TARGET].astype(float)
 
-    # Build robust preprocessors with imputation
-    numeric_transformer = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler())
-    ])
+    pre = build_preprocessor(num_cols, cat_cols)
 
-    # Handle OHE sparse parameter across sklearn versions
-    ohe_kwargs = {}
-    if "sparse_output" in inspect.signature(OneHotEncoder).parameters:
-        ohe_kwargs["sparse_output"] = False
-    else:
-        ohe_kwargs["sparse"] = False
-
-    categorical_transformer = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("ohe", OneHotEncoder(handle_unknown="ignore", **ohe_kwargs))
-    ])
-
-    pre = ColumnTransformer(
-        transformers=[
-            ("num", numeric_transformer, num_cols),
-            ("cat", categorical_transformer, cat_cols),
-        ]
-    )
-
-    model = Pipeline(steps=[
+    base = Pipeline([
         ("pre", pre),
         ("reg", RandomForestRegressor(
-            n_estimators=400, min_samples_leaf=2, random_state=42, n_jobs=-1
+            n_estimators=600,
+            min_samples_leaf=2,
+            random_state=42,
+            n_jobs=-1
         ))
     ])
 
+    model = TransformedTargetRegressor(
+        regressor=base, func=np.log1p, inverse_func=np.expm1
+    )
+
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.20, random_state=42
     )
 
     model.fit(X_train, y_train)
