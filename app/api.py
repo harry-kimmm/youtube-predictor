@@ -5,10 +5,10 @@ import numpy as np
 import pandas as pd
 import os
 from pathlib import Path
+from datetime import datetime
 
 MODEL_PATH = Path("models/youtube_model.joblib")
 DATA_CLEAN = Path("data/processed/youtube_clean.csv")
-from datetime import datetime
 CURRENT_YEAR = datetime.now().year
 
 NUM_COLS = [
@@ -38,20 +38,36 @@ if not MODEL_PATH.exists():
     raise FileNotFoundError(f"Model not found at {MODEL_PATH.resolve()}")
 model = joblib.load(MODEL_PATH)
 
-if not DATA_CLEAN.exists():
-    raise FileNotFoundError(f"Processed data not found at {DATA_CLEAN.resolve()}")
-stats_df = pd.read_csv(DATA_CLEAN)
+stats_df = None
+try:
+    if DATA_CLEAN.exists():
+        stats_df = pd.read_csv(DATA_CLEAN)
+except Exception:
+    stats_df = None
 
-SUB_P995 = float(np.nanpercentile(stats_df["subscribers"], 99.5))
-sv = stats_df.loc[stats_df["video_views"] > 0, ["subscribers","video_views"]].copy()
-sv["ratio"] = sv["subscribers"] / sv["video_views"]
-SV_RATIO_P95 = float(np.nanpercentile(sv["ratio"].replace([np.inf,-np.inf], np.nan).dropna(), 95)) if len(sv) else 1.0
+if stats_df is not None and "subscribers" in stats_df.columns:
+    SUB_P995 = float(np.nanpercentile(stats_df["subscribers"], 99.5))
+else:
+    SUB_P995 = 3e8
 
-su = stats_df.loc[stats_df["uploads"] > 0, ["subscribers","uploads"]].copy()
-su["ratio"] = su["subscribers"] / su["uploads"]
-SU_RATIO_P95 = float(np.nanpercentile(su["ratio"].replace([np.inf,-np.inf], np.nan).dropna(), 95)) if len(su) else 1e6
-if not np.isfinite(SV_RATIO_P95) or SV_RATIO_P95 <= 0: SV_RATIO_P95 = 1.0
-if not np.isfinite(SU_RATIO_P95) or SU_RATIO_P95 <= 0: SU_RATIO_P95 = 1e6
+if stats_df is not None and {"subscribers","video_views"}.issubset(stats_df.columns):
+    sv = stats_df.loc[stats_df["video_views"] > 0, ["subscribers","video_views"]].copy()
+    sv["ratio"] = sv["subscribers"] / sv["video_views"]
+    SV_RATIO_P95 = float(np.nanpercentile(sv["ratio"].replace([np.inf,-np.inf], np.nan).dropna(), 95)) if len(sv) else 1.0
+else:
+    SV_RATIO_P95 = 0.1
+
+if stats_df is not None and {"subscribers","uploads"}.issubset(stats_df.columns):
+    su = stats_df.loc[stats_df["uploads"] > 0, ["subscribers","uploads"]].copy()
+    su["ratio"] = su["subscribers"] / su["uploads"]
+    SU_RATIO_P95 = float(np.nanpercentile(su["ratio"].replace([np.inf,-np.inf], np.nan).dropna(), 95)) if len(su) else 1e6
+else:
+    SU_RATIO_P95 = 1e6
+
+if not np.isfinite(SV_RATIO_P95) or SV_RATIO_P95 <= 0:
+    SV_RATIO_P95 = 0.1
+if not np.isfinite(SU_RATIO_P95) or SU_RATIO_P95 <= 0:
+    SU_RATIO_P95 = 1e6
 
 def to_float(x):
     try:
@@ -156,7 +172,6 @@ def clamp_prediction(raw_pred: float, feats: pd.DataFrame, payload: dict):
 
     return float(clamped), reason
 
-
 @app.get("/health")
 def health():
     return {
@@ -194,7 +209,6 @@ def predict():
         return jsonify(resp)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
