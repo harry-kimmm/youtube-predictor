@@ -1,6 +1,26 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import {
+  ThemeProvider,
+  createTheme,
+  CssBaseline,
+  Container,
+  Grid,
+  TextField,
+  Select,
+  MenuItem,
+  InputLabel,
+  FormControl,
+  Button,
+  Card,
+  CardContent,
+  Typography,
+  Alert,
+  Box,
+  Stack,
+  CircularProgress,
+  Chip,
+} from "@mui/material";
 
-/* ---------- dropdown options ---------- */
 const CATEGORY_OPTIONS = [
   "Entertainment", "Music", "Gaming", "Education", "Sports", "People & Blogs",
   "Film & Animation", "Howto & Style", "News & Politics", "Shows", "Comedy",
@@ -16,20 +36,16 @@ const COUNTRY_OPTIONS = [
   "Russia", "Australia", "Italy", "Spain", "Netherlands", "Mexico", "Argentina"
 ];
 
-const yearsRange = (start, end) => {
-  const arr = [];
-  for (let y = start; y <= end; y++) arr.push(y);
-  return arr;
-};
+const yearsRange = (start, end) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
 const YEARS = yearsRange(2005, 2025);
 
 const toNumberOrNull = (v) => {
-  if (v === "" || v === null || v === undefined) return null;
+  if (v === "" || v == null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
 
-function NumericInput({ label, name, value, onChange, placeholder }) {
+function NumericTextField({ label, name, value, onChange, placeholder, required = false }) {
   const handle = (e) => {
     const raw = e.target.value;
     if (raw === "" || /^[0-9]+$/.test(raw)) {
@@ -37,57 +53,27 @@ function NumericInput({ label, name, value, onChange, placeholder }) {
     }
   };
   return (
-    <label className="block mb-3">
-      <div className="text-sm font-medium mb-1">{label}</div>
-      <input
-        className="w-full border rounded px-3 py-2"
-        name={name}
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]*"
-        value={value}
-        onChange={handle}
-        onWheel={(e) => e.currentTarget.blur()}
-        placeholder={placeholder}
-      />
-    </label>
+    <TextField
+      label={label}
+      name={name}
+      value={value}
+      onChange={handle}
+      placeholder={placeholder}
+      fullWidth
+      required={required}
+      inputMode="numeric"
+      onWheel={(e) => e.currentTarget.blur()}
+    />
   );
 }
 
-function TextInput({ label, name, value, onChange, placeholder }) {
-  return (
-    <label className="block mb-3">
-      <div className="text-sm font-medium mb-1">{label}</div>
-      <input
-        className="w-full border rounded px-3 py-2"
-        name={name}
-        type="text"
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-      />
-    </label>
-  );
-}
-
-function SelectInput({ label, name, value, onChange, options }) {
-  return (
-    <label className="block mb-3">
-      <div className="text-sm font-medium mb-1">{label}</div>
-      <select
-        className="w-full border rounded px-3 py-2 bg-white text-black"
-        name={name}
-        value={value}
-        onChange={onChange}
-      >
-        <option value="" disabled>Choose…</option>
-        {options.map((opt) => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
-    </label>
-  );
-}
+const theme = createTheme({
+  palette: { mode: "dark" },
+  shape: { borderRadius: 12 },
+  components: {
+    MuiCard: { styleOverrides: { root: { border: "1px solid rgba(255,255,255,0.1)" } } },
+  },
+});
 
 const initial = {
   video_views: "",
@@ -98,10 +84,6 @@ const initial = {
   category: "",
   country: "",
   channel_type: "",
-  lowest_monthly_earnings: "",
-  highest_monthly_earnings: "",
-  lowest_yearly_earnings: "",
-  highest_yearly_earnings: ""
 };
 
 export default function App() {
@@ -117,6 +99,42 @@ export default function App() {
     setForm((f) => ({ ...f, [name]: value }));
   };
 
+  const fillPreset = (p) => {
+    const presets = {
+      small: {
+        video_views: "25000",
+        uploads: "40",
+        video_views_for_the_last_30_days: "3000",
+        subscribers_for_last_30_days: "120",
+        created_year: "2022",
+        category: "Education",
+        country: "US",
+        channel_type: "Creator",
+      },
+      mid: {
+        video_views: "12000000",
+        uploads: "400",
+        video_views_for_the_last_30_days: "850000",
+        subscribers_for_last_30_days: "12000",
+        created_year: "2017",
+        category: "Entertainment",
+        country: "US",
+        channel_type: "Creator",
+      },
+      big: {
+        video_views: "850000000",
+        uploads: "2500",
+        video_views_for_the_last_30_days: "35000000",
+        subscribers_for_last_30_days: "500000",
+        created_year: "2014",
+        category: "Music",
+        country: "India",
+        channel_type: "Brand",
+      },
+    };
+    setForm(presets[p]);
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -129,24 +147,28 @@ export default function App() {
       video_views_for_the_last_30_days: toNumberOrNull(form.video_views_for_the_last_30_days),
       subscribers_for_last_30_days: toNumberOrNull(form.subscribers_for_last_30_days),
       created_year: toNumberOrNull(form.created_year),
-      category: form.category.trim(),
-      country: form.country.trim(),
-      channel_type: form.channel_type.trim(),
-      lowest_monthly_earnings: toNumberOrNull(form.lowest_monthly_earnings),
-      highest_monthly_earnings: toNumberOrNull(form.highest_monthly_earnings),
-      lowest_yearly_earnings: toNumberOrNull(form.lowest_yearly_earnings),
-      highest_yearly_earnings: toNumberOrNull(form.highest_yearly_earnings)
+      category: (form.category || "").trim(),
+      country: (form.country || "").trim(),
+      channel_type: (form.channel_type || "").trim(),
     };
 
     try {
       const resp = await fetch(`${apiBase}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       const data = await resp.json();
-      if (!resp.ok) setError(data?.error || "Request failed");
-      else setResult(data);
+      if (!resp.ok) {
+        const details = [
+          data?.error,
+          data?.missing?.length ? `missing: ${data.missing.join(", ")}` : "",
+          data?.problems?.length ? `problems: ${data.problems.join(", ")}` : "",
+        ].filter(Boolean).join(" | ");
+        setError(details || "Request failed");
+      } else {
+        setResult(data);
+      }
     } catch (err) {
       setError(err?.message || "Network error");
     } finally {
@@ -155,110 +177,187 @@ export default function App() {
   };
 
   return (
-    <div style={{ maxWidth: 960, margin: "24px auto", padding: "0 16px" }}>
-      <h1>YouTube Subscriber Predictor</h1>
-      <p style={{ color: "#888" }}>
-        API: <code>{apiBase}</code>
-      </p>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Stack direction="row" alignItems="baseline" justifyContent="space-between" mb={2}>
+          <Typography variant="h4" fontWeight={700}>YouTube Subscriber Predictor</Typography>
+          <Typography variant="body2" color="text.secondary">
+            API: <code>{apiBase}</code>
+          </Typography>
+        </Stack>
 
-      <form onSubmit={onSubmit} style={{ marginTop: 16 }}>
-        <h3>Required</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <NumericInput
-            label="Total Video Views"
-            name="video_views"
-            value={form.video_views}
-            onChange={onChange}
-            placeholder="e.g. 28368841870"
-          />
-          <NumericInput
-            label="Uploads"
-            name="uploads"
-            value={form.uploads}
-            onChange={onChange}
-            placeholder="e.g. 741"
-          />
-          <NumericInput
-            label="Views (last 30 days)"
-            name="video_views_for_the_last_30_days"
-            value={form.video_views_for_the_last_30_days}
-            onChange={onChange}
-            placeholder="e.g. 1348000000"
-          />
-          <NumericInput
-            label="Subscribers (last 30 days)"
-            name="subscribers_for_last_30_days"
-            value={form.subscribers_for_last_30_days}
-            onChange={onChange}
-            placeholder="e.g. 8000000"
-          />
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} mb={2}>
+              <Typography variant="subtitle1" color="text.secondary">Presets:</Typography>
+              <Stack direction="row" spacing={1}>
+                <Chip label="Small channel" onClick={() => fillPreset("small")} variant="outlined" />
+                <Chip label="Mid channel" onClick={() => fillPreset("mid")} variant="outlined" />
+                <Chip label="Big channel" onClick={() => fillPreset("big")} variant="outlined" />
+              </Stack>
+            </Stack>
 
-          <SelectInput
-            label="Created Year"
-            name="created_year"
-            value={form.created_year}
-            onChange={onChange}
-            options={YEARS}
-          />
-          <SelectInput
-            label="Category"
-            name="category"
-            value={form.category}
-            onChange={onChange}
-            options={CATEGORY_OPTIONS}
-          />
-          <SelectInput
-            label="Country"
-            name="country"
-            value={form.country}
-            onChange={onChange}
-            options={COUNTRY_OPTIONS}
-          />
-          <SelectInput
-            label="Channel Type"
-            name="channel_type"
-            value={form.channel_type}
-            onChange={onChange}
-            options={CHANNEL_TYPE_OPTIONS}
-          />
-        </div>
+            <Box component="form" noValidate onSubmit={onSubmit}>
+              <Typography variant="h6" gutterBottom>Required</Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <NumericTextField
+                    required
+                    label="Total Video Views"
+                    name="video_views"
+                    value={form.video_views}
+                    onChange={onChange}
+                    placeholder="e.g. 28368841870"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <NumericTextField
+                    required
+                    label="Uploads"
+                    name="uploads"
+                    value={form.uploads}
+                    onChange={onChange}
+                    placeholder="e.g. 741"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <NumericTextField
+                    required
+                    label="Views (last 30 days)"
+                    name="video_views_for_the_last_30_days"
+                    value={form.video_views_for_the_last_30_days}
+                    onChange={onChange}
+                    placeholder="e.g. 1348000000"
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <NumericTextField
+                    required
+                    label="Subscribers (last 30 days)"
+                    name="subscribers_for_last_30_days"
+                    value={form.subscribers_for_last_30_days}
+                    onChange={onChange}
+                    placeholder="e.g. 8000000"
+                  />
+                </Grid>
 
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            marginTop: 16,
-            padding: "10px 16px",
-            borderRadius: 8,
-            border: "1px solid #222",
-            background: "#222",
-            color: "white",
-            cursor: "pointer"
-          }}
-        >
-          {loading ? "Predicting..." : "Predict"}
-        </button>
-      </form>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel id="created-label">Created Year</InputLabel>
+                    <Select
+                      labelId="created-label"
+                      label="Created Year"
+                      name="created_year"
+                      value={form.created_year}
+                      onChange={onChange}
+                    >
+                      {YEARS.map((y) => (
+                        <MenuItem key={y} value={String(y)}>{y}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
 
-      {error && (
-        <div style={{ marginTop: 16, color: "crimson" }}>
-          <strong>Error:</strong> {error}
-        </div>
-      )}
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel id="category-label">Category</InputLabel>
+                    <Select
+                      labelId="category-label"
+                      label="Category"
+                      name="category"
+                      value={form.category}
+                      onChange={onChange}
+                    >
+                      {CATEGORY_OPTIONS.map((opt) => (
+                        <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
 
-      {result && (
-        <div style={{ marginTop: 16, padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
-          <h3>Prediction</h3>
-          <p>
-            <strong>Predicted Subscribers:</strong>{" "}
-            {result.predicted_subscribers?.toLocaleString?.() ?? result.predicted_subscribers}
-          </p>
-          {result.was_clamped && (
-            <p style={{ color: "#888" }}>Note: output was clamped ({result.clamp_reason}).</p>
-          )}
-          <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(result, null, 2)}</pre>
-        </div>
-      )}
-    </div>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel id="country-label">Country</InputLabel>
+                    <Select
+                      labelId="country-label"
+                      label="Country"
+                      name="country"
+                      value={form.country}
+                      onChange={onChange}
+                    >
+                      {COUNTRY_OPTIONS.map((opt) => (
+                        <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel id="type-label">Channel Type</InputLabel>
+                    <Select
+                      labelId="type-label"
+                      label="Channel Type"
+                      name="channel_type"
+                      value={form.channel_type}
+                      onChange={onChange}
+                    >
+                      {CHANNEL_TYPE_OPTIONS.map((opt) => (
+                        <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+
+              <Stack direction="row" spacing={2} mt={3}>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  size="large"
+                  disabled={loading}
+                  startIcon={loading ? <CircularProgress size={18} /> : null}
+                >
+                  {loading ? "Predicting..." : "Predict"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  onClick={() => { setForm(initial); setResult(null); setError(""); }}
+                >
+                  Reset
+                </Button>
+              </Stack>
+            </Box>
+          </CardContent>
+        </Card>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            <strong>Error:</strong> {error}
+          </Alert>
+        )}
+
+        {result && (
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>Prediction</Typography>
+              <Typography variant="h3" fontWeight={800} gutterBottom>
+                {result.predicted_subscribers?.toLocaleString?.() ?? result.predicted_subscribers}
+              </Typography>
+              {result.was_clamped && (
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Note: output was clamped ({result.clamp_reason})
+                </Typography>
+              )}
+              <Box component="pre" sx={{ whiteSpace: "pre-wrap", m: 0 }}>
+                {JSON.stringify(result, null, 2)}
+              </Box>
+            </CardContent>
+          </Card>
+        )}
+      </Container>
+    </ThemeProvider>
   );
 }
