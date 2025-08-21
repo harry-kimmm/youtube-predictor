@@ -182,9 +182,6 @@ export default function App() {
       <Container maxWidth="md" sx={{ py: 4 }}>
         <Stack direction="row" alignItems="baseline" justifyContent="space-between" mb={2}>
           <Typography variant="h4" fontWeight={700}>YouTube Subscriber Predictor</Typography>
-          <Typography variant="body2" color="text.secondary">
-            API: <code>{apiBase}</code>
-          </Typography>
         </Stack>
 
         <Card sx={{ mb: 3 }}>
