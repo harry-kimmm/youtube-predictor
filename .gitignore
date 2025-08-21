@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 .venv/
-models/
 notebooks/.ipynb_checkpoints/
 data/*
 !data/global_youtube_statistics.csv
